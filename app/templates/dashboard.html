@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Bank</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Fredoka:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-shell">
+        <!-- Sidebar -->
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-icon-sm">🏦</div>
+                <span class="sidebar-title">Family Bank</span>
+            </div>
+            <div class="sidebar-nav" id="sidebar-nav">
+                <!-- Populated by JS based on role -->
+            </div>
+            <div class="sidebar-footer">
+                <div class="user-badge" id="user-badge">
+                    <div class="avatar" id="user-avatar">?</div>
+                    <div class="user-info">
+                        <div class="user-name" id="user-name">Loading...</div>
+                        <div class="user-role" id="user-role">—</div>
+                    </div>
+                </div>
+                <button class="btn-icon" id="logout-btn" title="Sign Out">🚪</button>
+            </div>
+        </nav>
+
+        <!-- Mobile Header -->
+        <header class="mobile-header" id="mobile-header">
+            <button class="hamburger" id="hamburger">☰</button>
+            <span class="mobile-title">🏦 Family Bank</span>
+            <div class="avatar avatar-sm" id="mobile-avatar">?</div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content" id="main-content">
+            <div class="loading-screen" id="loading-screen">
+                <div class="spinner"></div>
+                <p>Loading your bank...</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Mobile overlay -->
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <!-- Modal backdrop -->
+    <div class="modal-backdrop" id="modal-backdrop" style="display:none;">
+        <div class="modal" id="modal">
+            <div class="modal-header">
+                <h3 id="modal-title">Modal</h3>
+                <button class="btn-icon modal-close" id="modal-close">✕</button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- Toast container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

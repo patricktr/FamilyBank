@@ -1,0 +1,22 @@
+services:
+  family-bank:
+    build: .
+    container_name: family-bank
+    ports:
+      - "5000:5000"
+    volumes:
+      - bank_data:/data
+    environment:
+      - DATABASE_PATH=/data/family_bank.db
+      - SECRET_KEY=${SECRET_KEY:-please-change-this-to-something-random}
+      - PORT=5000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/login')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  bank_data:
+    driver: local

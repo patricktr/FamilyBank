@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Bank - Login</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="login-body">
+    <div class="login-container">
+        <div class="login-card">
+            <div class="bank-logo">
+                <div class="logo-icon">🏦</div>
+                <h1 class="bank-name">Family Bank</h1>
+                <p class="bank-tagline">Your money, your way</p>
+            </div>
+
+            <form id="login-form" class="login-form" autocomplete="off">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" placeholder="Enter your username" required autofocus>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" placeholder="Enter your password" required>
+                </div>
+                <div id="login-error" class="error-message" style="display:none;"></div>
+                <button type="submit" class="btn btn-primary btn-full" id="login-btn">
+                    <span>Sign In</span>
+                    <span class="btn-loading" style="display:none;">⏳</span>
+                </button>
+            </form>
+        </div>
+        <div class="login-footer">
+            <p>Made with ❤️ by Mom &amp; Dad</p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('login-btn');
+            const error = document.getElementById('login-error');
+            error.style.display = 'none';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: document.getElementById('username').value,
+                        password: document.getElementById('password').value
+                    })
+                });
+
+                const data = await res.json();
+                if (res.ok) {
+                    window.location.href = '/dashboard';
+                } else {
+                    error.textContent = data.error || 'Login failed';
+                    error.style.display = 'block';
+                }
+            } catch (err) {
+                error.textContent = 'Connection error. Please try again.';
+                error.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
