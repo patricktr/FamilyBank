@@ -406,7 +406,7 @@ async function showEditAllowanceModal(configId, userName, amount, frequency, act
             });
 
             if (response.ok) {
-                    toast('Allowance updated successfully');
+                toast('Allowance updated successfully');
                 closeModal();
                 renderAllowancesWithSplits(); // Refresh
             } else {
