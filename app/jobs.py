@@ -4,6 +4,50 @@ from datetime import datetime, timedelta, date
 from app.models import get_db
 
 
+def _get_next_day_of_week(from_date, target_day_of_week):
+    """
+    Get the next occurrence of a specific day of the week.
+    If from_date is already on the target day, returns from_date.
+
+    Args:
+        from_date: Starting date
+        target_day_of_week: 0=Monday, 1=Tuesday, ..., 6=Sunday
+
+    Returns:
+        Next date that falls on the target day of week
+    """
+    days_ahead = target_day_of_week - from_date.weekday()
+    if days_ahead < 0:  # Target day already happened this week
+        days_ahead += 7
+    return from_date + timedelta(days=days_ahead)
+
+
+def _get_next_day_of_month(from_date, target_day):
+    """
+    Get the next occurrence of a specific day of the month.
+
+    Args:
+        from_date: Starting date
+        target_day: Day of month (1-31)
+
+    Returns:
+        Next date that falls on the target day of month
+    """
+    # Start with next month
+    next_month = from_date.month + 1
+    next_year = from_date.year
+    if next_month > 12:
+        next_month = 1
+        next_year += 1
+
+    # Handle months with fewer days (e.g., asking for 31st in February)
+    import calendar
+    max_day = calendar.monthrange(next_year, next_month)[1]
+    actual_day = min(target_day, max_day)
+
+    return date(next_year, next_month, actual_day)
+
+
 def process_allowances():
     """Process due allowance payments with support for multiple account splits."""
     db = get_db()
@@ -70,20 +114,36 @@ def process_allowances():
                     (split_amount, split['account_id'])
                 )
 
-        # Calculate next payment date
+        # Calculate next payment date using schedule preferences
         current_date = date.fromisoformat(config['next_payment_date'])
+
         if config['frequency'] == 'weekly':
-            next_date = current_date + timedelta(weeks=1)
+            # If day_of_week is set, use it; otherwise just add 7 days
+            if config.get('day_of_week') is not None:
+                # Add 1 day to ensure we get the next occurrence (not the same day)
+                next_date = _get_next_day_of_week(current_date + timedelta(days=1), config['day_of_week'])
+            else:
+                next_date = current_date + timedelta(weeks=1)
+
         elif config['frequency'] == 'biweekly':
-            next_date = current_date + timedelta(weeks=2)
+            # If day_of_week is set, find next occurrence at least 2 weeks out
+            if config.get('day_of_week') is not None:
+                next_date = _get_next_day_of_week(current_date + timedelta(weeks=2), config['day_of_week'])
+            else:
+                next_date = current_date + timedelta(weeks=2)
+
         elif config['frequency'] == 'monthly':
-            # Advance by one month
-            month = current_date.month + 1
-            year = current_date.year
-            if month > 12:
-                month = 1
-                year += 1
-            next_date = current_date.replace(year=year, month=month)
+            # If day_of_month is set, use it; otherwise advance by one month
+            if config.get('day_of_month') is not None:
+                next_date = _get_next_day_of_month(current_date, config['day_of_month'])
+            else:
+                # Advance by one month
+                month = current_date.month + 1
+                year = current_date.year
+                if month > 12:
+                    month = 1
+                    year += 1
+                next_date = current_date.replace(year=year, month=month)
 
         db.execute(
             'UPDATE allowance_config SET next_payment_date = ? WHERE id = ?',

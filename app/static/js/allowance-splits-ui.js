@@ -321,9 +321,19 @@ function updateSplitsTotal() {
     }
 }
 
-// ── Edit Allowance Modal (original functionality) ─────────────────
+// ── Edit Allowance Modal (with schedule selector) ────────────────
 
-function showEditAllowanceModal(configId, userName, amount, frequency, active) {
+async function showEditAllowanceModal(configId, userName, amount, frequency, active) {
+    // Fetch current config to get schedule preferences
+    const response = await fetch('/api/admin/allowances');
+    const configs = await response.json();
+    const config = configs.find(c => c.id === configId);
+
+    const dayOfWeek = config?.day_of_week ?? 0; // Default to Monday
+    const dayOfMonth = config?.day_of_month ?? 1; // Default to 1st
+
+    const scheduleHTML = renderScheduleSelector(frequency, dayOfWeek, dayOfMonth);
+
     const bodyHTML = `
         <form id="edit-allowance-form">
             <div class="form-group">
@@ -335,14 +345,21 @@ function showEditAllowanceModal(configId, userName, amount, frequency, active) {
 
             <div class="form-group">
                 <label>Frequency</label>
-                <select id="allowance-frequency">
+                <select id="allowance-frequency" onchange="updateScheduleSelector()">
                     <option value="weekly" ${frequency === 'weekly' ? 'selected' : ''}>Weekly</option>
                     <option value="biweekly" ${frequency === 'biweekly' ? 'selected' : ''}>Biweekly</option>
                     <option value="monthly" ${frequency === 'monthly' ? 'selected' : ''}>Monthly</option>
                 </select>
             </div>
 
-            <div class="form-group">
+            <div id="schedule-selector">
+                ${scheduleHTML}
+            </div>
+
+            <div id="next-payment-preview" style="margin-top: 1rem; padding: 0.75rem; background: #f1f5f9; border-radius: 8px; color: #475569; font-size: 0.9rem;">
+            </div>
+
+            <div class="form-group" style="margin-top: 1rem;">
                 <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
                     <input type="checkbox" id="allowance-active" ${active ? 'checked' : ''}>
                     <span>Active (enable automatic payments)</span>
@@ -358,12 +375,26 @@ function showEditAllowanceModal(configId, userName, amount, frequency, active) {
 
     showModal(`Edit Allowance - ${userName}`, bodyHTML);
 
+    // Setup schedule listeners and initial preview
+    setupScheduleListeners();
+
+    // Update next payment preview on load
+    const schedule = getScheduleValues();
+    if (schedule.next_payment_date) {
+        updateNextPaymentPreview(schedule.next_payment_date);
+    }
+
     document.getElementById('edit-allowance-form').addEventListener('submit', async (e) => {
         e.preventDefault();
 
+        const schedule = getScheduleValues();
+
         const data = {
             amount: parseFloat(document.getElementById('allowance-amount').value),
-            frequency: document.getElementById('allowance-frequency').value,
+            frequency: schedule.frequency,
+            day_of_week: schedule.day_of_week,
+            day_of_month: schedule.day_of_month,
+            next_payment_date: schedule.next_payment_date,
             active: document.getElementById('allowance-active').checked ? 1 : 0
         };
 
@@ -375,7 +406,7 @@ function showEditAllowanceModal(configId, userName, amount, frequency, active) {
             });
 
             if (response.ok) {
-                toast('Allowance updated successfully');
+                    toast('Allowance updated successfully');
                 closeModal();
                 renderAllowancesWithSplits(); // Refresh
             } else {
@@ -386,4 +417,28 @@ function showEditAllowanceModal(configId, userName, amount, frequency, active) {
             toast('Network error', 'error');
         }
     });
+}
+
+// Update schedule selector when frequency changes
+function updateScheduleSelector() {
+    const frequencySelect = document.getElementById('allowance-frequency');
+    if (!frequencySelect) return;
+
+    const frequency = frequencySelect.value;
+    const container = document.getElementById('schedule-selector');
+
+    if (!container) return;
+
+    // Get current values or defaults
+    const dayOfWeek = 0; // Monday
+    const dayOfMonth = 1; // 1st
+
+    container.innerHTML = renderScheduleSelector(frequency, dayOfWeek, dayOfMonth);
+    setupScheduleListeners();
+
+    // Update preview
+    const schedule = getScheduleValues();
+    if (schedule.next_payment_date) {
+        updateNextPaymentPreview(schedule.next_payment_date);
+    }
 }

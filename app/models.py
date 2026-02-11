@@ -55,6 +55,24 @@ def run_migrations():
                 db.execute('INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)', (1,))
                 db.commit()
 
+    # Migration 2: Add allowance schedule preferences
+    if current_version < 2 and os.path.exists(os.path.join(migrations_dir, '002_add_allowance_schedule_preferences.sql')):
+        try:
+            with open(os.path.join(migrations_dir, '002_add_allowance_schedule_preferences.sql'), 'r') as f:
+                migration_sql = f.read()
+            db.executescript(migration_sql)
+            db.execute('INSERT INTO schema_migrations (version) VALUES (?)', (2,))
+            db.commit()
+            print("✅ Applied migration 002: Add allowance schedule preferences")
+        except Exception as e:
+            print(f"⚠️  Migration 002 failed (may already be applied): {e}")
+            # Check if columns already exist
+            cursor = db.execute("PRAGMA table_info(allowance_config)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if 'day_of_week' in columns:
+                db.execute('INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)', (2,))
+                db.commit()
+
     db.close()
 
 
@@ -115,6 +133,8 @@ def init_db():
                 'checking', 'savings'
             )),
             next_payment_date TEXT,
+            day_of_week INTEGER,
+            day_of_month INTEGER,
             active INTEGER DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)

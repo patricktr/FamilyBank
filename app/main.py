@@ -689,12 +689,15 @@ def create_app():
         target = data.get('target_account_type', config['target_account_type'])
         active = data.get('active', config['active'])
         next_date = data.get('next_payment_date', config['next_payment_date'])
+        day_of_week = data.get('day_of_week', config.get('day_of_week'))
+        day_of_month = data.get('day_of_month', config.get('day_of_month'))
 
         db.execute('''
             UPDATE allowance_config
-            SET amount = ?, frequency = ?, target_account_type = ?, active = ?, next_payment_date = ?
+            SET amount = ?, frequency = ?, target_account_type = ?, active = ?, next_payment_date = ?,
+                day_of_week = ?, day_of_month = ?
             WHERE id = ?
-        ''', (amount, frequency, target, active, next_date, config_id))
+        ''', (amount, frequency, target, active, next_date, day_of_week, day_of_month, config_id))
 
         db.commit()
         return jsonify({'success': True})
