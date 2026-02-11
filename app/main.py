@@ -8,7 +8,7 @@ from flask import (
     redirect, url_for, g
 )
 from werkzeug.security import generate_password_hash, check_password_hash
-from app.models import get_db, init_db, seed_demo_data
+from app.models import get_db, init_db, seed_demo_data, run_migrations
 
 
 def create_app():
@@ -19,6 +19,7 @@ def create_app():
     # Initialize DB on first request
     with app.app_context():
         init_db()
+        run_migrations()
         seed_demo_data()
 
     @app.teardown_appcontext
@@ -173,6 +174,131 @@ def create_app():
             ''', (session['user_id'],)).fetchall()
 
         return jsonify([dict(a) for a in accounts])
+
+    @app.route('/api/accounts/checking', methods=['POST'])
+    @login_required
+    def api_create_checking_account():
+        """Create a new checking account with nickname."""
+        data = request.get_json()
+        target_user_id = data.get('user_id')  # For parents creating accounts for kids
+        nickname = data.get('nickname', '').strip()
+
+        if not nickname:
+            return jsonify({'error': 'Nickname is required'}), 400
+
+        db = get_database()
+        user = db.execute('SELECT role FROM users WHERE id = ?', (session['user_id'],)).fetchone()
+
+        # Determine which user the account is for
+        if user['role'] == 'parent' and target_user_id:
+            # Parent creating account for a kid
+            creating_for_user_id = target_user_id
+        else:
+            # Kid creating for themselves (need permission check)
+            creating_for_user_id = session['user_id']
+
+            # Check if kids can create checking accounts
+            kids_can_create = get_setting('kids_can_create_checking') == 'true'
+            if user['role'] != 'parent' and not kids_can_create:
+                return jsonify({'error': 'You do not have permission to create checking accounts'}), 403
+
+        # Check limit on checking accounts
+        max_accounts = int(get_setting('max_checking_accounts_per_kid') or 5)
+        current_count = db.execute(
+            "SELECT COUNT(*) as count FROM accounts WHERE user_id = ? AND account_type = 'checking'",
+            (creating_for_user_id,)
+        ).fetchone()['count']
+
+        if current_count >= max_accounts:
+            return jsonify({'error': f'Maximum of {max_accounts} checking accounts allowed'}), 400
+
+        # Check if nickname is already used by this user
+        existing = db.execute(
+            "SELECT id FROM accounts WHERE user_id = ? AND nickname = ? AND account_type = 'checking'",
+            (creating_for_user_id, nickname)
+        ).fetchone()
+
+        if existing:
+            return jsonify({'error': 'A checking account with this nickname already exists'}), 409
+
+        # Create the checking account
+        is_first = current_count == 0
+        db.execute(
+            'INSERT INTO accounts (user_id, account_type, nickname, is_default, balance) VALUES (?, ?, ?, ?, ?)',
+            (creating_for_user_id, 'checking', nickname, 1 if is_first else 0, 0.00)
+        )
+        account_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+
+        db.commit()
+        return jsonify({
+            'success': True,
+            'account_id': account_id,
+            'message': f'Checking account "{nickname}" created successfully'
+        })
+
+    @app.route('/api/accounts/<int:account_id>/nickname', methods=['PUT'])
+    @login_required
+    def api_update_account_nickname(account_id):
+        """Update account nickname."""
+        data = request.get_json()
+        nickname = data.get('nickname', '').strip()
+
+        if not nickname:
+            return jsonify({'error': 'Nickname is required'}), 400
+
+        db = get_database()
+        account = db.execute('SELECT * FROM accounts WHERE id = ?', (account_id,)).fetchone()
+
+        if not account:
+            return jsonify({'error': 'Account not found'}), 404
+
+        user = db.execute('SELECT role FROM users WHERE id = ?', (session['user_id'],)).fetchone()
+
+        # Check permission
+        if user['role'] != 'parent' and account['user_id'] != session['user_id']:
+            return jsonify({'error': 'Access denied'}), 403
+
+        # Check if nickname is already used
+        existing = db.execute(
+            "SELECT id FROM accounts WHERE user_id = ? AND nickname = ? AND account_type = ? AND id != ?",
+            (account['user_id'], nickname, account['account_type'], account_id)
+        ).fetchone()
+
+        if existing:
+            return jsonify({'error': 'This nickname is already used for another account'}), 409
+
+        db.execute('UPDATE accounts SET nickname = ? WHERE id = ?', (nickname, account_id))
+        db.commit()
+
+        return jsonify({'success': True, 'message': f'Account nickname updated to "{nickname}"'})
+
+    @app.route('/api/accounts/<int:account_id>/set-default', methods=['POST'])
+    @login_required
+    def api_set_default_account(account_id):
+        """Set an account as the default for its type."""
+        db = get_database()
+        account = db.execute('SELECT * FROM accounts WHERE id = ?', (account_id,)).fetchone()
+
+        if not account:
+            return jsonify({'error': 'Account not found'}), 404
+
+        user = db.execute('SELECT role FROM users WHERE id = ?', (session['user_id'],)).fetchone()
+
+        # Check permission
+        if user['role'] != 'parent' and account['user_id'] != session['user_id']:
+            return jsonify({'error': 'Access denied'}), 403
+
+        # Unset other defaults of same type for this user
+        db.execute(
+            'UPDATE accounts SET is_default = 0 WHERE user_id = ? AND account_type = ?',
+            (account['user_id'], account['account_type'])
+        )
+
+        # Set this one as default
+        db.execute('UPDATE accounts SET is_default = 1 WHERE id = ?', (account_id,))
+        db.commit()
+
+        return jsonify({'success': True, 'message': 'Default account updated'})
 
     @app.route('/api/accounts/<int:account_id>/transactions')
     @login_required
@@ -463,15 +589,18 @@ def create_app():
         user_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
 
         if role == 'kid':
-            # Create checking and savings accounts
+            # Create checking and savings accounts with default nicknames
             db.execute(
-                'INSERT INTO accounts (user_id, account_type, balance) VALUES (?, ?, ?)',
-                (user_id, 'checking', 0.00)
+                'INSERT INTO accounts (user_id, account_type, nickname, is_default, balance) VALUES (?, ?, ?, ?, ?)',
+                (user_id, 'checking', 'Main', 1, 0.00)
             )
+            checking_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+
             db.execute(
-                'INSERT INTO accounts (user_id, account_type, balance) VALUES (?, ?, ?)',
-                (user_id, 'savings', 0.00)
+                'INSERT INTO accounts (user_id, account_type, nickname, is_default, balance) VALUES (?, ?, ?, ?, ?)',
+                (user_id, 'savings', 'Savings', 1, 0.00)
             )
+            savings_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
 
             # Create default allowance config
             from datetime import date
@@ -480,20 +609,23 @@ def create_app():
                 'INSERT INTO allowance_config (user_id, amount, frequency, next_payment_date, active) VALUES (?, ?, ?, ?, ?)',
                 (user_id, 0.00, 'weekly', next_monday.isoformat(), 0)
             )
+            allowance_config_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+
+            # Create default allowance split (100% to main checking account)
+            db.execute(
+                'INSERT INTO allowance_splits (allowance_config_id, account_id, percentage) VALUES (?, ?, ?)',
+                (allowance_config_id, checking_id, 100.0)
+            )
 
             # Create interest config for savings account
-            savings_id = db.execute(
-                "SELECT id FROM accounts WHERE user_id = ? AND account_type = 'savings'",
-                (user_id,)
-            ).fetchone()[0]
             db.execute(
                 'INSERT INTO interest_config (account_id, annual_rate, compound_frequency, active) VALUES (?, ?, ?, ?)',
                 (savings_id, 5.0, 'monthly', 0)
             )
         elif role == 'parent':
             db.execute(
-                'INSERT INTO accounts (user_id, account_type, balance) VALUES (?, ?, ?)',
-                (user_id, 'parent_vault', 999999999.00)
+                'INSERT INTO accounts (user_id, account_type, nickname, is_default, balance) VALUES (?, ?, ?, ?, ?)',
+                (user_id, 'parent_vault', 'Vault', 1, 999999999.00)
             )
 
         db.commit()
@@ -566,6 +698,74 @@ def create_app():
 
         db.commit()
         return jsonify({'success': True})
+
+    @app.route('/api/admin/allowances/<int:config_id>/splits')
+    @parent_required
+    def api_get_allowance_splits(config_id):
+        """Get allowance split configuration for a user's allowance."""
+        db = get_database()
+
+        config = db.execute('SELECT * FROM allowance_config WHERE id = ?', (config_id,)).fetchone()
+        if not config:
+            return jsonify({'error': 'Config not found'}), 404
+
+        splits = db.execute('''
+            SELECT s.*, a.nickname, a.account_type, a.balance
+            FROM allowance_splits s
+            JOIN accounts a ON s.account_id = a.id
+            WHERE s.allowance_config_id = ?
+            ORDER BY s.percentage DESC
+        ''', (config_id,)).fetchall()
+
+        return jsonify([dict(s) for s in splits])
+
+    @app.route('/api/admin/allowances/<int:config_id>/splits', methods=['PUT'])
+    @parent_required
+    def api_update_allowance_splits(config_id):
+        """Update allowance splits across multiple checking accounts."""
+        data = request.get_json()
+        splits = data.get('splits', [])  # List of {account_id, percentage}
+
+        if not splits:
+            return jsonify({'error': 'At least one split is required'}), 400
+
+        # Validate percentages add up to 100
+        total_percentage = sum(s.get('percentage', 0) for s in splits)
+        if abs(total_percentage - 100.0) > 0.01:  # Allow small floating point errors
+            return jsonify({'error': f'Percentages must add up to 100% (currently {total_percentage}%)'}), 400
+
+        # Validate each percentage is between 0 and 100
+        for split in splits:
+            if split.get('percentage', 0) < 0 or split.get('percentage', 0) > 100:
+                return jsonify({'error': 'Each percentage must be between 0 and 100'}), 400
+
+        db = get_database()
+
+        config = db.execute('SELECT * FROM allowance_config WHERE id = ?', (config_id,)).fetchone()
+        if not config:
+            return jsonify({'error': 'Config not found'}), 404
+
+        # Verify all accounts belong to the user and are checking accounts
+        for split in splits:
+            account = db.execute(
+                'SELECT * FROM accounts WHERE id = ? AND user_id = ? AND account_type = ?',
+                (split['account_id'], config['user_id'], 'checking')
+            ).fetchone()
+            if not account:
+                return jsonify({'error': f'Invalid account {split["account_id"]} - must be a checking account for this user'}), 400
+
+        # Delete existing splits
+        db.execute('DELETE FROM allowance_splits WHERE allowance_config_id = ?', (config_id,))
+
+        # Insert new splits
+        for split in splits:
+            db.execute(
+                'INSERT INTO allowance_splits (allowance_config_id, account_id, percentage) VALUES (?, ?, ?)',
+                (config_id, split['account_id'], split['percentage'])
+            )
+
+        db.commit()
+        return jsonify({'success': True, 'message': 'Allowance splits updated successfully'})
 
     # ── Interest Config API ──────────────────────────────────────────
 

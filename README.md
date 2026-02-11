@@ -4,6 +4,8 @@ A miniature banking app for teaching kids about money management. Give your kids
 
 ## Features
 
+- **Multiple Checking Accounts** — Kids can have up to 5 checking accounts with custom nicknames like "Spend", "Donate", "Save" (NEW! ✨)
+- **Allowance Splitting** — Automatically distribute allowance across multiple checking accounts with custom percentages (NEW! ✨)
 - **Checking & Savings Accounts** — Each kid gets both, with real balances
 - **Deposits & Withdrawals** — Parents deposit, kids request withdrawals (with optional approval)
 - **Transfers** — Kids can move money between their own checking and savings
@@ -95,17 +97,36 @@ docker compose up -d
 
 ### For Kids
 - Log in to see checking and savings balances
+- **NEW:** Create multiple checking accounts with custom nicknames (if enabled by parent)
 - Request withdrawals (parents hand over the cash in real life)
 - Transfer between checking and savings
 - See full transaction history
 
 ### For Parents
 - See all kids' accounts at a glance
+- **NEW:** Create multiple checking accounts for kids with custom nicknames (e.g., "Spend", "Donate", "Save")
+- **NEW:** Split allowances across multiple checking accounts with custom percentages
 - Deposit money into any kid's account
 - Approve or reject withdrawal requests
 - Configure per-kid allowance (amount, frequency, target account)
 - Configure interest rates on savings accounts
 - Manage family members and settings
+
+### Multiple Checking Accounts (NEW! ✨)
+
+Kids can now organize their money into different categories! Create up to 5 checking accounts with nicknames like:
+- 💰 **Spend** — Money for fun purchases
+- 💝 **Donate** — Money for charity
+- 🎯 **Save** — Saving for a specific goal
+- 🚨 **Emergency** — Emergency fund
+- 🎮 **Gaming** — Money for games
+
+Parents can automatically split allowances across these accounts. For example:
+- 60% to Spend
+- 30% to Save
+- 10% to Donate
+
+📖 **[View detailed documentation →](MULTIPLE_CHECKING_ACCOUNTS.md)**
 
 ### Automatic Jobs
 A background scheduler runs hourly to:

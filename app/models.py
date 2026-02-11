@@ -17,6 +17,47 @@ def get_db():
     return db
 
 
+def run_migrations():
+    """Run database migrations."""
+    db = get_db()
+
+    # Create migrations table if it doesn't exist
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Check current version
+    current_version_row = db.execute(
+        'SELECT MAX(version) as version FROM schema_migrations'
+    ).fetchone()
+    current_version = current_version_row['version'] if current_version_row['version'] else 0
+
+    migrations_dir = os.path.join(os.path.dirname(__file__), '..', 'migrations')
+
+    # Migration 1: Add checking account features
+    if current_version < 1 and os.path.exists(os.path.join(migrations_dir, '001_add_checking_account_features.sql')):
+        try:
+            with open(os.path.join(migrations_dir, '001_add_checking_account_features.sql'), 'r') as f:
+                migration_sql = f.read()
+            db.executescript(migration_sql)
+            db.execute('INSERT INTO schema_migrations (version) VALUES (?)', (1,))
+            db.commit()
+            print("✅ Applied migration 001: Add checking account features")
+        except Exception as e:
+            print(f"⚠️  Migration 001 failed (may already be applied): {e}")
+            # Check if columns already exist
+            cursor = db.execute("PRAGMA table_info(accounts)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if 'nickname' in columns:
+                db.execute('INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)', (1,))
+                db.commit()
+
+    db.close()
+
+
 def init_db():
     """Initialize the database schema."""
     db = get_db()
@@ -35,6 +76,8 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             account_type TEXT NOT NULL CHECK(account_type IN ('checking', 'savings', 'parent_vault')),
+            nickname TEXT,
+            is_default INTEGER DEFAULT 0,
             balance REAL DEFAULT 0.00,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
@@ -102,6 +145,17 @@ def init_db():
             icon TEXT DEFAULT '💰',
             color TEXT DEFAULT '#6366f1'
         );
+
+        CREATE TABLE IF NOT EXISTS allowance_splits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            allowance_config_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            percentage REAL NOT NULL DEFAULT 100.0 CHECK(percentage >= 0 AND percentage <= 100),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (allowance_config_id) REFERENCES allowance_config(id) ON DELETE CASCADE,
+            FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
+            UNIQUE(allowance_config_id, account_id)
+        );
     ''')
 
     # Insert default settings
@@ -110,6 +164,8 @@ def init_db():
         ('max_withdrawal_without_approval', '0'),
         ('bank_name', 'Family Bank'),
         ('currency_symbol', '$'),
+        ('kids_can_create_checking', 'false'),
+        ('max_checking_accounts_per_kid', '5'),
     ]
     for key, value in defaults:
         db.execute(
@@ -157,8 +213,8 @@ def seed_demo_data():
 
         # Create parent vault account (unlimited funds)
         db.execute(
-            'INSERT INTO accounts (user_id, account_type, balance) VALUES (?, ?, ?)',
-            (parent_id, 'parent_vault', 999999999.00)
+            'INSERT INTO accounts (user_id, account_type, nickname, is_default, balance) VALUES (?, ?, ?, ?, ?)',
+            (parent_id, 'parent_vault', 'Vault', 1, 999999999.00)
         )
 
         db.commit()

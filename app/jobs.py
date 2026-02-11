@@ -5,32 +5,70 @@ from app.models import get_db
 
 
 def process_allowances():
-    """Process due allowance payments."""
+    """Process due allowance payments with support for multiple account splits."""
     db = get_db()
     today = date.today().isoformat()
 
+    # Get all due allowance configs
     due_configs = db.execute('''
-        SELECT ac.*, a.id as account_id
+        SELECT ac.*, u.display_name
         FROM allowance_config ac
         JOIN users u ON ac.user_id = u.id
-        JOIN accounts a ON a.user_id = u.id AND a.account_type = ac.target_account_type
         WHERE ac.active = 1 AND ac.amount > 0 AND ac.next_payment_date <= ?
     ''', (today,)).fetchall()
 
     count = 0
     for config in due_configs:
-        # Create allowance transaction
-        db.execute('''
-            INSERT INTO transactions (to_account_id, amount, transaction_type, category, description, status)
-            VALUES (?, ?, 'allowance', 'Allowance', ?, 'completed')
-        ''', (config['account_id'], config['amount'],
-              f"Weekly allowance - {date.today().strftime('%b %d, %Y')}"))
+        # Get allowance splits for this config
+        splits = db.execute('''
+            SELECT s.*, a.nickname
+            FROM allowance_splits s
+            JOIN accounts a ON s.account_id = a.id
+            WHERE s.allowance_config_id = ?
+        ''', (config['id'],)).fetchall()
 
-        # Update balance
-        db.execute(
-            'UPDATE accounts SET balance = balance + ? WHERE id = ?',
-            (config['amount'], config['account_id'])
-        )
+        if not splits:
+            # Fallback: if no splits defined, use the old behavior (target_account_type)
+            account = db.execute(
+                'SELECT id FROM accounts WHERE user_id = ? AND account_type = ? AND is_default = 1',
+                (config['user_id'], config['target_account_type'])
+            ).fetchone()
+
+            if account:
+                splits = [{'account_id': account['id'], 'percentage': 100.0, 'nickname': 'Main'}]
+            else:
+                print(f"⚠️  No account found for allowance config {config['id']}, skipping")
+                continue
+
+        # Distribute allowance across splits
+        total_distributed = 0.0
+        description_base = f"{config['frequency'].capitalize()} allowance - {date.today().strftime('%b %d, %Y')}"
+
+        for i, split in enumerate(splits):
+            # Calculate amount for this split
+            if i == len(splits) - 1:
+                # Last split gets remainder to handle rounding
+                split_amount = config['amount'] - total_distributed
+            else:
+                split_amount = round(config['amount'] * (split['percentage'] / 100.0), 2)
+                total_distributed += split_amount
+
+            if split_amount > 0:
+                # Create allowance transaction
+                description = f"{description_base}"
+                if len(splits) > 1:
+                    description += f" ({split['nickname']}: {split['percentage']}%)"
+
+                db.execute('''
+                    INSERT INTO transactions (to_account_id, amount, transaction_type, category, description, status)
+                    VALUES (?, ?, 'allowance', 'Allowance', ?, 'completed')
+                ''', (split['account_id'], split_amount, description))
+
+                # Update balance
+                db.execute(
+                    'UPDATE accounts SET balance = balance + ? WHERE id = ?',
+                    (split_amount, split['account_id'])
+                )
 
         # Calculate next payment date
         current_date = date.fromisoformat(config['next_payment_date'])
