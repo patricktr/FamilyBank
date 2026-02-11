@@ -85,12 +85,14 @@ async function loadSplitsPreview(configId) {
 
         let html = '<div style="display: flex; flex-direction: column; gap: 0.5rem;">';
         for (const split of splits) {
+            const accountIcon = split.account_type === 'savings' ? '🏦' : '💳';
+            const barColor = split.account_type === 'savings' ? '#10b981' : '#3b82f6';
             html += `
                 <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;">
-                    <span>${split.nickname || 'Unnamed'}</span>
+                    <span>${accountIcon} ${split.nickname || 'Unnamed'}</span>
                     <div style="display: flex; align-items: center; gap: 1rem;">
                         <div style="flex: 0 0 100px; background: #e2e8f0; border-radius: 8px; height: 8px; position: relative;">
-                            <div style="background: #3b82f6; height: 100%; width: ${split.percentage}%; border-radius: 8px;"></div>
+                            <div style="background: ${barColor}; height: 100%; width: ${split.percentage}%; border-radius: 8px;"></div>
                         </div>
                         <strong style="min-width: 50px; text-align: right;">${split.percentage}%</strong>
                     </div>
@@ -111,7 +113,7 @@ async function loadSplitsPreview(configId) {
 // ── Allowance Splits Modal ────────────────────────────────────────
 
 async function showAllowanceSplitsModal(configId, userName, userId) {
-    // Fetch current splits and checking accounts
+    // Fetch current splits and all accounts
     const [splitsResponse, accountsResponse] = await Promise.all([
         fetch(`/api/admin/allowances/${configId}/splits`),
         fetch('/api/accounts')
@@ -119,10 +121,12 @@ async function showAllowanceSplitsModal(configId, userName, userId) {
 
     const splits = await splitsResponse.json();
     const allAccounts = await accountsResponse.json();
-    const checkingAccounts = allAccounts.filter(a => a.user_id === userId && a.account_type === 'checking');
+    const userAccounts = allAccounts.filter(a =>
+        a.user_id === userId && (a.account_type === 'checking' || a.account_type === 'savings')
+    );
 
-    if (checkingAccounts.length === 0) {
-        toast('No checking accounts found for this user', 'error');
+    if (userAccounts.length === 0) {
+        toast('No checking or savings accounts found for this user', 'error');
         return;
     }
 
@@ -132,16 +136,24 @@ async function showAllowanceSplitsModal(configId, userName, userId) {
         currentSplits[split.account_id] = split.percentage;
     }
 
+    // Group accounts by type
+    const checkingAccounts = userAccounts.filter(a => a.account_type === 'checking');
+    const savingsAccounts = userAccounts.filter(a => a.account_type === 'savings');
+
     let bodyHTML = `
         <form id="splits-form">
             <p style="margin-bottom: 1rem; color: #64748b;">
-                Distribute <strong>${userName}'s</strong> allowance across checking accounts. Percentages must add up to 100%.
+                Distribute <strong>${userName}'s</strong> allowance across checking and savings accounts. Percentages must add up to 100%.
             </p>
 
             <div id="splits-inputs">
     `;
 
-    // Add input for each checking account
+    // Add checking accounts section
+    if (checkingAccounts.length > 0) {
+        bodyHTML += `<div style="margin-bottom: 1rem;"><strong style="color: #475569; font-size: 0.9rem;">💳 Checking Accounts</strong></div>`;
+    }
+
     for (let i = 0; i < checkingAccounts.length; i++) {
         const account = checkingAccounts[i];
         const currentPercentage = currentSplits[account.id] || 0;
@@ -151,6 +163,39 @@ async function showAllowanceSplitsModal(configId, userName, userId) {
                 <label style="flex: 1; margin: 0;">
                     ${account.nickname || 'Unnamed'}
                     ${account.is_default ? '<span style="background: #22c55e; color: white; padding: 2px 6px; border-radius: 8px; font-size: 0.7rem;">DEFAULT</span>' : ''}
+                </label>
+                <div style="display: flex; align-items: center; gap: 0.25rem;">
+                    <input
+                        type="number"
+                        class="split-input"
+                        data-account-id="${account.id}"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value="${currentPercentage}"
+                        style="width: 80px; text-align: right;"
+                        oninput="updateSplitsTotal()"
+                    >
+                    <span>%</span>
+                </div>
+            </div>
+        `;
+    }
+
+    // Add savings accounts section
+    if (savingsAccounts.length > 0) {
+        bodyHTML += `<div style="margin: 1.5rem 0 1rem 0;"><strong style="color: #475569; font-size: 0.9rem;">🏦 Savings Accounts</strong></div>`;
+    }
+
+    for (let i = 0; i < savingsAccounts.length; i++) {
+        const account = savingsAccounts[i];
+        const currentPercentage = currentSplits[account.id] || 0;
+
+        bodyHTML += `
+            <div class="form-group" style="display: flex; gap: 0.5rem; align-items: center;">
+                <label style="flex: 1; margin: 0;">
+                    ${account.nickname || 'Unnamed'}
+                    ${account.is_default ? '<span style="background: #10b981; color: white; padding: 2px 6px; border-radius: 8px; font-size: 0.7rem;">SAVINGS</span>' : ''}
                 </label>
                 <div style="display: flex; align-items: center; gap: 0.25rem;">
                     <input

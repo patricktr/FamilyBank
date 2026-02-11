@@ -714,7 +714,7 @@ def create_app():
             FROM allowance_splits s
             JOIN accounts a ON s.account_id = a.id
             WHERE s.allowance_config_id = ?
-            ORDER BY s.percentage DESC
+            ORDER BY a.account_type, s.percentage DESC
         ''', (config_id,)).fetchall()
 
         return jsonify([dict(s) for s in splits])
@@ -745,14 +745,14 @@ def create_app():
         if not config:
             return jsonify({'error': 'Config not found'}), 404
 
-        # Verify all accounts belong to the user and are checking accounts
+        # Verify all accounts belong to the user and are checking or savings accounts
         for split in splits:
             account = db.execute(
-                'SELECT * FROM accounts WHERE id = ? AND user_id = ? AND account_type = ?',
-                (split['account_id'], config['user_id'], 'checking')
+                'SELECT * FROM accounts WHERE id = ? AND user_id = ? AND account_type IN (?, ?)',
+                (split['account_id'], config['user_id'], 'checking', 'savings')
             ).fetchone()
             if not account:
-                return jsonify({'error': f'Invalid account {split["account_id"]} - must be a checking account for this user'}), 400
+                return jsonify({'error': f'Invalid account {split["account_id"]} - must be a checking or savings account for this user'}), 400
 
         # Delete existing splits
         db.execute('DELETE FROM allowance_splits WHERE allowance_config_id = ?', (config_id,))

@@ -99,19 +99,26 @@ Look for: `✅ Applied migration 001: Add checking account features`
 1. Click **"📅 Allowances"** in sidebar
 2. Find the kid whose allowance you want to split
 3. Click **"💰 Manage Splits"**
-4. Enter percentages for each checking account
+4. Enter percentages for each checking and savings account
 5. Make sure they add up to 100%
 6. Click **"Save Splits"**
 
-**Example split:**
+**Example split (checking only):**
 - Main: 60%
 - Spend: 30%
 - Donate: 10%
 
-When the next allowance runs, it will automatically distribute:
-- $6.00 to Main
-- $3.00 to Spend
-- $1.00 to Donate
+**Example split (including savings):**
+- Spend (checking): 50%
+- Savings (savings account): 30% ← Earns interest!
+- Donate (checking): 20%
+
+When the next allowance runs ($10 weekly), it will automatically distribute:
+- $5.00 to Spend
+- $3.00 to Savings (will earn interest!)
+- $2.00 to Donate
+
+**💡 Pro Tip:** Putting part of the allowance into a savings account with interest enabled teaches kids about compound growth!
 
 ### Kids - Creating Their Own Accounts:
 
