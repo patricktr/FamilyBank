@@ -3,8 +3,12 @@
 import os
 import threading
 import time
+from dotenv import load_dotenv
 from app.main import create_app
 from app.jobs import run_all_jobs
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = create_app()
 

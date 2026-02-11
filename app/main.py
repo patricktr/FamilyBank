@@ -124,7 +124,17 @@ def create_app():
         if not user:
             session.clear()
             return jsonify({'error': 'User not found'}), 401
-        return jsonify(dict(user))
+
+        user_dict = dict(user)
+
+        # Include account management permission for kids
+        if user['role'] == 'kid':
+            kids_can_create = get_setting('kids_can_create_checking') == 'true'
+            max_accounts = int(get_setting('max_checking_accounts_per_kid') or 5)
+            user_dict['kidsCanManageAccounts'] = kids_can_create
+            user_dict['maxCheckingAccounts'] = max_accounts
+
+        return jsonify(user_dict)
 
     @app.route('/api/auth/change-password', methods=['POST'])
     @login_required
@@ -660,6 +670,31 @@ def create_app():
         db.commit()
         return jsonify({'success': True})
 
+    @app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
+    @parent_required
+    def api_delete_user(user_id):
+        db = get_database()
+
+        # Prevent deleting yourself
+        if user_id == session['user_id']:
+            return jsonify({'error': 'Cannot delete your own account'}), 400
+
+        user = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+
+        # Delete user's accounts (cascade will handle transactions)
+        db.execute('DELETE FROM accounts WHERE user_id = ?', (user_id,))
+
+        # Delete user's allowance configs
+        db.execute('DELETE FROM allowance_config WHERE user_id = ?', (user_id,))
+
+        # Delete the user
+        db.execute('DELETE FROM users WHERE id = ?', (user_id,))
+
+        db.commit()
+        return jsonify({'success': True, 'message': f'User {user["display_name"]} deleted'})
+
     # ── Allowance Config API ─────────────────────────────────────────
 
     @app.route('/api/admin/allowances')
@@ -677,30 +712,41 @@ def create_app():
     @app.route('/api/admin/allowances/<int:config_id>', methods=['PUT'])
     @parent_required
     def api_update_allowance(config_id):
-        data = request.get_json()
-        db = get_database()
+        try:
+            data = request.get_json()
+            db = get_database()
 
-        config = db.execute('SELECT * FROM allowance_config WHERE id = ?', (config_id,)).fetchone()
-        if not config:
-            return jsonify({'error': 'Config not found'}), 404
+            config = db.execute('SELECT * FROM allowance_config WHERE id = ?', (config_id,)).fetchone()
+            if not config:
+                return jsonify({'error': 'Config not found'}), 404
 
-        amount = data.get('amount', config['amount'])
-        frequency = data.get('frequency', config['frequency'])
-        target = data.get('target_account_type', config['target_account_type'])
-        active = data.get('active', config['active'])
-        next_date = data.get('next_payment_date', config['next_payment_date'])
-        day_of_week = data.get('day_of_week', config.get('day_of_week'))
-        day_of_month = data.get('day_of_month', config.get('day_of_month'))
+            amount = data.get('amount', config['amount'])
+            frequency = data.get('frequency', config['frequency'])
+            target = data.get('target_account_type', config['target_account_type'])
+            active = data.get('active', config['active'])
+            next_date = data.get('next_payment_date', config['next_payment_date'])
+            day_of_week = data.get('day_of_week', config['day_of_week'])
+            day_of_month = data.get('day_of_month', config['day_of_month'])
 
-        db.execute('''
-            UPDATE allowance_config
-            SET amount = ?, frequency = ?, target_account_type = ?, active = ?, next_payment_date = ?,
-                day_of_week = ?, day_of_month = ?
-            WHERE id = ?
-        ''', (amount, frequency, target, active, next_date, day_of_week, day_of_month, config_id))
+            print(f"DEBUG: Updating allowance {config_id}")
+            print(f"  amount={amount}, frequency={frequency}")
+            print(f"  day_of_week={day_of_week}, day_of_month={day_of_month}")
+            print(f"  next_date={next_date}")
 
-        db.commit()
-        return jsonify({'success': True})
+            db.execute('''
+                UPDATE allowance_config
+                SET amount = ?, frequency = ?, target_account_type = ?, active = ?, next_payment_date = ?,
+                    day_of_week = ?, day_of_month = ?
+                WHERE id = ?
+            ''', (amount, frequency, target, active, next_date, day_of_week, day_of_month, config_id))
+
+            db.commit()
+            return jsonify({'success': True})
+        except Exception as e:
+            print(f"ERROR in api_update_allowance: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': str(e)}), 500
 
     @app.route('/api/admin/allowances/<int:config_id>/splits')
     @parent_required

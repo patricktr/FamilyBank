@@ -227,11 +227,11 @@ async function setDefaultAccount(accountId, userName) {
 async function renderKidManageAccounts() {
     const main = document.getElementById('main-content');
     const accounts = await API.getAccounts();
-    const settings = await API.getSettings();
 
-    const canCreate = settings.kids_can_create_checking === 'true';
+    // Use settings from currentUser (set during login)
+    const canCreate = currentUser.kidsCanManageAccounts || false;
     const checkingAccounts = accounts.filter(a => a.account_type === 'checking');
-    const maxAccounts = parseInt(settings.max_checking_accounts_per_kid || 5);
+    const maxAccounts = currentUser.maxCheckingAccounts || 5;
     const canAddMore = checkingAccounts.length < maxAccounts;
 
     let html = `
@@ -288,6 +288,10 @@ async function renderKidManageAccounts() {
                                 ${$(acc.balance)}
                             </div>
                         </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button class="btn btn-ghost btn-sm" onclick="showRenameOwnAccountModal(${acc.id}, '${acc.nickname}')">Rename</button>
+                            ${!acc.is_default ? `<button class="btn btn-ghost btn-sm" style="color: #ef4444;" onclick="confirmDeleteOwnAccount(${acc.id}, '${acc.nickname}', ${acc.balance})">Delete</button>` : ''}
+                        </div>
                     </div>
                 </div>
             `;
@@ -341,4 +345,104 @@ function showCreateOwnAccountModal() {
             toast('Network error', 'error');
         }
     });
+}
+
+function showRenameOwnAccountModal(accountId, currentNickname) {
+    const bodyHTML = `
+        <form id="rename-own-account-form">
+            <div class="form-group">
+                <label>New Nickname</label>
+                <input type="text" id="rename-nickname" value="${currentNickname}" required maxlength="30">
+            </div>
+
+            <div class="modal-actions" style="margin-top: 1.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    `;
+
+    showModal('Rename Account', bodyHTML);
+
+    document.getElementById('rename-own-account-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const nickname = document.getElementById('rename-nickname').value.trim();
+
+        try {
+            const result = await fetch(`/api/accounts/${accountId}/nickname`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nickname })
+            });
+
+            const data = await result.json();
+
+            if (result.ok) {
+                toast(data.message);
+                closeModal();
+                renderKidManageAccounts();
+            } else {
+                toast(data.error || 'Failed to rename account', 'error');
+            }
+        } catch (e) {
+            toast('Network error', 'error');
+        }
+    });
+}
+
+function confirmDeleteOwnAccount(accountId, nickname, balance) {
+    if (balance > 0) {
+        showModal('Cannot Delete Account', `
+            <div style="padding: 1rem 0;">
+                <p style="color: #ef4444; font-weight: 600; margin-bottom: 1rem;">⚠️ Account has a balance!</p>
+                <p style="margin-bottom: 1rem;">
+                    You cannot delete the <strong>${nickname}</strong> account because it has a balance of <strong>${$(balance)}</strong>.
+                </p>
+                <p style="color: #64748b;">
+                    Please transfer the money to another account first, or withdraw it.
+                </p>
+            </div>
+            <div class="modal-actions" style="margin-top: 1.5rem;">
+                <button class="btn btn-primary" onclick="closeModal()">OK</button>
+            </div>
+        `);
+        return;
+    }
+
+    showModal(`Delete ${nickname}?`, `
+        <div style="padding: 1rem 0;">
+            <p style="margin-bottom: 1rem;">
+                Are you sure you want to delete the <strong>${nickname}</strong> account?
+            </p>
+            <p style="color: #64748b; font-size: 0.9rem;">
+                This will permanently delete the account and its transaction history.
+            </p>
+            <p style="color: #ef4444; font-weight: 600; margin-top: 1rem;">⚠️ This action cannot be undone!</p>
+        </div>
+        <div class="modal-actions" style="margin-top: 1.5rem;">
+            <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" style="background: #ef4444;" onclick="deleteOwnAccount(${accountId}, '${nickname}')">Delete ${nickname}</button>
+        </div>
+    `);
+}
+
+async function deleteOwnAccount(accountId, nickname) {
+    try {
+        const result = await fetch(`/api/accounts/${accountId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await result.json();
+
+        if (result.ok) {
+            toast(data.message || `${nickname} deleted`);
+            closeModal();
+            renderKidManageAccounts();
+        } else {
+            toast(data.error || 'Failed to delete account', 'error');
+        }
+    } catch (e) {
+        toast('Network error', 'error');
+    }
 }

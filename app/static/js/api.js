@@ -73,6 +73,9 @@ const API = {
     updateUser(userId, data) {
         return this.request(`/api/admin/users/${userId}`, { method: 'PUT', body: data });
     },
+    deleteUser(userId) {
+        return this.request(`/api/admin/users/${userId}`, { method: 'DELETE' });
+    },
 
     // Allowances
     getAllowances() { return this.request('/api/admin/allowances'); },

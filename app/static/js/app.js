@@ -13,6 +13,9 @@ async function init() {
     try {
         currentUser = await API.me();
         categories = await API.getCategories();
+
+        // kidsCanManageAccounts is now included in currentUser from API.me() for kids
+
         setupSidebar();
         setupMobile();
         setupLogout();
@@ -75,9 +78,11 @@ function setupSidebar() {
             <div class="nav-item active" data-view="dashboard">
                 <span class="nav-icon">🏠</span> My Accounts
             </div>
+            ${currentUser.kidsCanManageAccounts ? `
             <div class="nav-item" data-view="my-accounts">
                 <span class="nav-icon">💳</span> Manage Accounts
             </div>
+            ` : ''}
             <div class="nav-item" data-view="withdraw">
                 <span class="nav-icon">💸</span> Withdraw
             </div>
@@ -280,7 +285,7 @@ async function renderParentDashboard() {
                     html += `
                         <div class="account-card ${acct.account_type}" onclick="showAccountDetail(${acct.id}, '${kid.user.display_name}', '${acct.account_type}')">
                             <div class="account-type-label">
-                                ${acct.account_type === 'checking' ? '💳' : '🐷'} ${acct.account_type}
+                                ${acct.account_type === 'checking' ? '💳' : '🐷'} ${acct.nickname || acct.account_type}
                             </div>
                             <div class="account-balance">${$(acct.balance)}</div>
                         </div>
@@ -319,7 +324,7 @@ async function renderKidDashboard() {
             html += `
                 <div class="account-card ${acct.account_type}" onclick="showAccountDetail(${acct.id}, '${currentUser.display_name}', '${acct.account_type}')">
                     <div class="account-type-label">
-                        ${acct.account_type === 'checking' ? '💳' : '🐷'} ${acct.account_type}
+                        ${acct.account_type === 'checking' ? '💳' : '🐷'} ${acct.nickname || acct.account_type}
                     </div>
                     <div class="account-balance">${$(acct.balance)}</div>
                     <div class="account-owner">Tap to see transactions</div>
@@ -498,7 +503,7 @@ async function renderDeposit() {
                     <label>Deposit To</label>
                     <select id="dep-account" required>
                         <option value="">Select an account...</option>
-                        ${kidAccounts.map(a => `<option value="${a.id}">${a.owner_name} — ${a.account_type} (${$(a.balance)})</option>`).join('')}
+                        ${kidAccounts.map(a => `<option value="${a.id}">${a.owner_name} — ${a.nickname || a.account_type} (${$(a.balance)})</option>`).join('')}
                     </select>
                 </div>
                 <div class="form-group">
@@ -554,7 +559,7 @@ async function renderWithdraw() {
                 <div class="form-group">
                     <label>From Account</label>
                     <select id="wth-account" required>
-                        ${accounts.map(a => `<option value="${a.id}">${a.account_type} (${$(a.balance)})</option>`).join('')}
+                        ${accounts.map(a => `<option value="${a.id}">${a.nickname || a.account_type} (${$(a.balance)})</option>`).join('')}
                     </select>
                 </div>
                 <div class="form-group">
@@ -610,13 +615,13 @@ async function renderKidTransfer() {
                 <div class="form-group">
                     <label>From</label>
                     <select id="xfr-from" required>
-                        ${accounts.map(a => `<option value="${a.id}">${a.account_type} (${$(a.balance)})</option>`).join('')}
+                        ${accounts.map(a => `<option value="${a.id}">${a.nickname || a.account_type} (${$(a.balance)})</option>`).join('')}
                     </select>
                 </div>
                 <div class="form-group">
                     <label>To</label>
                     <select id="xfr-to" required>
-                        ${accounts.map(a => `<option value="${a.id}">${a.account_type} (${$(a.balance)})</option>`).join('')}
+                        ${accounts.map(a => `<option value="${a.id}">${a.nickname || a.account_type} (${$(a.balance)})</option>`).join('')}
                     </select>
                 </div>
                 <div class="form-group">
@@ -669,7 +674,7 @@ async function renderHistory() {
         html += `
             <div class="card mb-6">
                 <div class="card-header">
-                    <h3 class="card-title">${acct.account_type === 'checking' ? '💳' : '🐷'} ${acct.account_type} — ${$(acct.balance)}</h3>
+                    <h3 class="card-title">${acct.account_type === 'checking' ? '💳' : '🐷'} ${acct.nickname || acct.account_type} — ${$(acct.balance)}</h3>
                 </div>
         `;
 
@@ -701,11 +706,15 @@ async function renderUsers() {
                 <h1 class="page-title">Family Members</h1>
                 <p class="page-subtitle">Manage accounts and family members</p>
             </div>
-            <button class="btn btn-primary" onclick="showAddUserModal()">+ Add Member</button>
+            <div style="display:flex;gap:8px;">
+                <button class="btn btn-ghost" onclick="renderAccountPermissions()">⚙️ Account Permissions</button>
+                <button class="btn btn-primary" onclick="showAddUserModal()">+ Add Member</button>
+            </div>
         </div>
     `;
 
     for (const user of users) {
+        const isCurrentUser = user.id === currentUser.id;
         html += `
             <div class="config-card">
                 <div class="config-header">
@@ -713,10 +722,13 @@ async function renderUsers() {
                         <div class="avatar" style="background:${user.avatar_color || '#6366f1'}">${user.display_name.charAt(0)}</div>
                         <div>
                             <h4>${user.display_name}</h4>
-                            <div class="text-secondary" style="font-size:12px;">@${user.username} · ${user.role === 'parent' ? '👑 Parent' : '⭐ Kid'}</div>
+                            <div class="text-secondary" style="font-size:12px;">@${user.username} · ${user.role === 'parent' ? '👑 Parent' : '⭐ Kid'}${isCurrentUser ? ' (You)' : ''}</div>
                         </div>
                     </div>
-                    <button class="btn btn-ghost btn-sm" onclick="showEditUserModal(${user.id}, '${user.display_name}', '${user.avatar_color || '#6366f1'}')">Edit</button>
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn btn-ghost btn-sm" onclick="showEditUserModal(${user.id}, '${user.display_name}', '${user.avatar_color || '#6366f1'}')">Edit</button>
+                        ${!isCurrentUser ? `<button class="btn btn-ghost btn-sm" style="color:#ef4444;" onclick="confirmDeleteUser(${user.id}, '${user.display_name}')">Delete</button>` : ''}
+                    </div>
                 </div>
             </div>
         `;
@@ -821,6 +833,107 @@ function showEditUserModal(userId, name, color) {
             await API.updateUser(userId, data);
             toast('Updated!');
             closeModal();
+            renderUsers();
+        } catch (e) {
+            toast(e.message, 'error');
+        }
+    });
+}
+
+function confirmDeleteUser(userId, userName) {
+    showModal(`Delete ${userName}?`, `
+        <div style="padding:1rem 0;">
+            <p style="margin-bottom:1rem;">Are you sure you want to delete <strong>${userName}</strong>?</p>
+            <p style="color:#64748b;font-size:0.9rem;">This will permanently delete:</p>
+            <ul style="margin:0.5rem 0;padding-left:1.5rem;color:#64748b;font-size:0.9rem;">
+                <li>Their user account</li>
+                <li>All their checking and savings accounts</li>
+                <li>All their transaction history</li>
+                <li>Their allowance configuration</li>
+            </ul>
+            <p style="color:#ef4444;font-weight:600;margin-top:1rem;">⚠️ This action cannot be undone!</p>
+        </div>
+        <div class="form-actions" style="margin-top:1.5rem;">
+            <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" style="background:#ef4444;" onclick="deleteUser(${userId}, '${userName}')">Delete ${userName}</button>
+        </div>
+    `);
+}
+
+async function deleteUser(userId, userName) {
+    try {
+        const response = await fetch(`/api/admin/users/${userId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const result = await response.json();
+        if (response.ok) {
+            toast(result.message || `${userName} deleted`);
+            closeModal();
+            renderUsers();
+        } else {
+            toast(result.error || 'Failed to delete user', 'error');
+        }
+    } catch (e) {
+        toast('Network error', 'error');
+    }
+}
+
+async function renderAccountPermissions() {
+    const main = document.getElementById('main-content');
+    const settings = await API.getSettings();
+
+    const kidsCanCreate = settings.kids_can_create_checking === 'true';
+    const maxAccounts = parseInt(settings.max_checking_accounts_per_kid || 5);
+
+    let html = `
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">⚙️ Account Permissions</h1>
+                <p class="page-subtitle">Configure checking account permissions and limits</p>
+            </div>
+        </div>
+
+        <div class="card" style="max-width:600px;">
+            <h3 class="card-title" style="margin-bottom:1.5rem;">Checking Account Management</h3>
+
+            <form id="settings-form">
+                <div class="form-group">
+                    <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+                        <input type="checkbox" id="kids-can-create" ${kidsCanCreate ? 'checked' : ''}>
+                        <span>Allow kids to create their own checking accounts</span>
+                    </label>
+                    <small style="color:#64748b;display:block;margin-top:0.5rem;">
+                        When enabled, kids can create multiple checking accounts (e.g., "Spend", "Donate", "Save") from their dashboard.
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label>Maximum checking accounts per kid</label>
+                    <input type="number" id="max-accounts" min="1" max="20" value="${maxAccounts}" required>
+                    <small style="color:#64748b;display:block;margin-top:0.5rem;">
+                        Limit how many checking accounts each kid can have (recommended: 3-5)
+                    </small>
+                </div>
+
+                <div style="margin-top:2rem;padding-top:2rem;border-top:1px solid #e2e8f0;">
+                    <button type="submit" class="btn btn-primary">Save Settings</button>
+                    <button type="button" class="btn btn-ghost" onclick="renderUsers()" style="margin-left:0.5rem;">Cancel</button>
+                </div>
+            </form>
+        </div>
+    `;
+
+    main.innerHTML = html;
+
+    document.getElementById('settings-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+            await API.updateSettings({
+                kids_can_create_checking: document.getElementById('kids-can-create').checked ? 'true' : 'false',
+                max_checking_accounts_per_kid: document.getElementById('max-accounts').value
+            });
+            toast('Settings saved! ✓');
             renderUsers();
         } catch (e) {
             toast(e.message, 'error');
