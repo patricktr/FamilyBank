@@ -57,6 +57,9 @@ function setupSidebar() {
             <div class="nav-item" data-view="users">
                 <span class="nav-icon">👨‍👧‍👦</span> Family Members
             </div>
+            <div class="nav-item" data-view="manage-accounts">
+                <span class="nav-icon">💳</span> Manage Accounts
+            </div>
             <div class="nav-item" data-view="allowances">
                 <span class="nav-icon">📅</span> Allowances
             </div>
@@ -71,6 +74,9 @@ function setupSidebar() {
         navHTML = `
             <div class="nav-item active" data-view="dashboard">
                 <span class="nav-icon">🏠</span> My Accounts
+            </div>
+            <div class="nav-item" data-view="my-accounts">
+                <span class="nav-icon">💳</span> Manage Accounts
             </div>
             <div class="nav-item" data-view="withdraw">
                 <span class="nav-icon">💸</span> Withdraw
@@ -106,11 +112,13 @@ function navigateTo(view) {
         'approvals': renderApprovals,
         'deposit': renderDeposit,
         'users': renderUsers,
-        'allowances': renderAllowances,
+        'manage-accounts': renderManageAccounts,
+        'allowances': renderAllowancesWithSplits,
         'interest': renderInterest,
         'settings': renderSettings,
         'withdraw': renderWithdraw,
         'kid-transfer': renderKidTransfer,
+        'my-accounts': renderKidManageAccounts,
         'history': renderHistory,
     };
 
@@ -173,6 +181,12 @@ function categorySelect(selected = 'General') {
     return categories.map(c =>
         `<option value="${c.name}" ${c.name === selected ? 'selected' : ''}>${c.icon} ${c.name}</option>`
     ).join('');
+}
+
+function formatAccountName(account) {
+    const nickname = account.nickname || account.account_type;
+    const defaultBadge = account.is_default ? ' ⭐' : '';
+    return `${nickname}${defaultBadge}`;
 }
 
 function toast(message, type = 'success') {
